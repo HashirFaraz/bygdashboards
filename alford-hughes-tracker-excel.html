@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Alford Hughes — Lead Tracker (Excel)</title>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.10.0/lib/msal-browser.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f3; color: #1a1a1a; min-height: 100vh; }
+  .container { max-width: 1000px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+  .header { margin-bottom: 2rem; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+  .header h1 { font-size: 20px; font-weight: 600; color: #1a1a1a; }
+  .header p { font-size: 13px; color: #888; margin-top: 4px; }
+  .header-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+
+  .btn { font-size: 13px; padding: 7px 14px; border-radius: 8px; border: 0.5px solid #ddd; background: #fff; color: #666; cursor: pointer; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .btn:hover { background: #f0f0ee; }
+  .btn-primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+  .btn-primary:hover { background: #333; }
+
+  .login-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; text-align: center; gap: 1rem; }
+  .login-screen h2 { font-size: 18px; font-weight: 500; }
+  .login-screen p { font-size: 13px; color: #888; max-width: 340px; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1.5rem; }
+  .stat { background: #fff; border: 0.5px solid #e5e5e5; border-radius: 10px; padding: 1rem 1.1rem; }
+  .stat-label { font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+  .stat-value { font-size: 24px; font-weight: 600; color: #1a1a1a; }
+
+  .controls { display: flex; gap: 8px; margin-bottom: 1rem; flex-wrap: wrap; align-items: center; }
+  .controls input, .controls select { font-size: 13px; padding: 7px 11px; border-radius: 8px; border: 0.5px solid #ddd; background: #fff; color: #1a1a1a; outline: none; }
+  .controls input { flex: 1; min-width: 180px; }
+
+  .table-wrap { background: #fff; border: 0.5px solid #e5e5e5; border-radius: 12px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+  th { background: #fafaf9; font-weight: 500; font-size: 11px; color: #999; text-align: left; padding: 11px 16px; border-bottom: 0.5px solid #eee; text-transform: uppercase; letter-spacing: 0.04em; }
+  td { padding: 12px 16px; color: #1a1a1a; border-bottom: 0.5px solid #f0f0f0; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafaf9; }
+
+  .badge { display: inline-block; font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 20px; }
+  .badge-active   { background: #e1f5ee; color: #0f6e56; }
+  .badge-closed   { background: #eaf3de; color: #3b6d11; }
+  .badge-followup { background: #faeeda; color: #854f0b; }
+  .badge-default  { background: #f0f0f0; color: #666; }
+
+  .empty { text-align: center; padding: 2.5rem; color: #aaa; font-size: 13px; }
+  .last-updated { font-size: 11px; color: #bbb; margin-top: 0.75rem; text-align: right; }
+  .hidden { display: none; }
+  .spin { display: inline-block; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 600px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="login-screen" id="login-screen">
+    <h2>Alford Hughes — lead tracker</h2>
+    <p>Sign in with your BYG Microsoft account to load live data from Excel.</p>
+    <button class="btn btn-primary" onclick="signIn()">Sign in with Microsoft</button>
+  </div>
+
+  <div id="dashboard" class="hidden">
+    <div class="header">
+      <div>
+        <h1>Alford Hughes — lead tracker</h1>
+        <p>Live data from Excel on OneDrive</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn" onclick="loadData()"><span id="refresh-icon">↺</span> Refresh</button>
+        <button class="btn" onclick="signOut()">Sign out</button>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="stat-label">Total leads</div><div class="stat-value" id="s-total">—</div></div>
+      <div class="stat"><div class="stat-label">Active</div><div class="stat-value" id="s-active">—</div></div>
+      <div class="stat"><div class="stat-label">Closed</div><div class="stat-value" id="s-closed">—</div></div>
+      <div class="stat"><div class="stat-label">Follow up</div><div class="stat-value" id="s-followup">—</div></div>
+    </div>
+
+    <div class="controls">
+      <input type="text" id="search" placeholder="Search leads or agents…" oninput="render()" />
+      <select id="filter-status" onchange="render()">
+        <option value="">All statuses</option>
+        <option value="Active">Active</option>
+        <option value="Closed">Closed</option>
+        <option value="Follow Up">Follow Up</option>
+      </select>
+      <select id="filter-agent" onchange="render()">
+        <option value="">All agents</option>
+      </select>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:30%">Lead</th>
+            <th style="width:16%">Status</th>
+            <th style="width:16%">Agent</th>
+            <th style="width:19%">Entered on</th>
+            <th style="width:19%">Closed on</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div class="last-updated" id="last-updated"></div>
+  </div>
+
+</div>
+
+<script>
+const CLIENT_ID  = '791ec3d3-26f8-4fb1-ad6d-bd22f5a83a2f';
+const TENANT_ID  = '90745028-ad90-4f79-8e2f-5d7d8e5d5233';
+const OWNER_UPN  = 'hfaraz_binyousef_com';   // whose OneDrive the file lives in
+const FILE_NAME  = 'SampleDataHTML.xlsx';
+const SHEET_NAME = 'Sheet1';
+const REDIRECT   = 'https://hashirfaraz.github.io/bygdashboards/alford-hughes-tracker-excel.html';
+
+const msalConfig = {
+  auth: { clientId: CLIENT_ID, authority: `https://login.microsoftonline.com/${TENANT_ID}`, redirectUri: REDIRECT },
+  cache: { cacheLocation: 'sessionStorage' }
+};
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+const scopes = ['Files.Read', 'Files.Read.All', 'User.Read'];
+let allData = [];
+
+async function init() {
+  await msalInstance.initialize();
+  const response = await msalInstance.handleRedirectPromise();
+  if (response) msalInstance.setActiveAccount(response.account);
+  const account = msalInstance.getActiveAccount() || msalInstance.getAllAccounts()[0];
+  if (account) { msalInstance.setActiveAccount(account); showDashboard(); loadData(); }
+}
+
+async function signIn() { await msalInstance.loginRedirect({ scopes }); }
+function signOut() { msalInstance.logoutRedirect(); }
+
+async function getToken() {
+  const account = msalInstance.getActiveAccount();
+  const result = await msalInstance.acquireTokenSilent({ scopes, account });
+  return result.accessToken;
+}
+
+function showDashboard() {
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('dashboard').classList.remove('hidden');
+}
+
+function formatDate(val) {
+  if (!val && val !== 0) return '—';
+  // Excel serial number (days since 1900-01-01)
+  if (typeof val === 'number') {
+    const date = new Date((val - 25569) * 86400 * 1000);
+    return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+  const d = new Date(val);
+  if (isNaN(d)) return val;
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function badgeClass(status) {
+  if (!status) return 'badge-default';
+  const s = status.toString().toLowerCase();
+  if (s === 'active') return 'badge-active';
+  if (s === 'closed') return 'badge-closed';
+  if (s.includes('follow')) return 'badge-followup';
+  return 'badge-default';
+}
+
+function updateStats(data) {
+  document.getElementById('s-total').textContent = data.length;
+  document.getElementById('s-active').textContent = data.filter(r => r.Status && r.Status.toString().toLowerCase() === 'active').length;
+  document.getElementById('s-closed').textContent = data.filter(r => r.Status && r.Status.toString().toLowerCase() === 'closed').length;
+  document.getElementById('s-followup').textContent = data.filter(r => r.Status && r.Status.toString().toLowerCase().includes('follow')).length;
+}
+
+function populateAgents(data) {
+  const sel = document.getElementById('filter-agent');
+  const current = sel.value;
+  const agents = [...new Set(data.map(r => r.Agent).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">All agents</option>' + agents.map(a => `<option value="${a}">${a}</option>`).join('');
+  if (agents.includes(current)) sel.value = current;
+}
+
+function render() {
+  const search = document.getElementById('search').value.toLowerCase();
+  const status = document.getElementById('filter-status').value;
+  const agent  = document.getElementById('filter-agent').value;
+  const rows = allData.filter(r => {
+    if (status && r.Status !== status) return false;
+    if (agent && r.Agent !== agent) return false;
+    if (search && !((r.Lead || '').toString().toLowerCase().includes(search) || (r.Agent || '').toString().toLowerCase().includes(search))) return false;
+    return true;
+  });
+  const tbody = document.getElementById('tbody');
+  if (rows.length === 0) { tbody.innerHTML = `<tr><td colspan="5" class="empty">No leads found.</td></tr>`; return; }
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td style="font-weight:500">${r.Lead || '—'}</td>
+      <td><span class="badge ${badgeClass(r.Status)}">${r.Status || '—'}</span></td>
+      <td>${r.Agent || '—'}</td>
+      <td style="color:#999">${formatDate(r['Lead Entered On'])}</td>
+      <td style="color:#999">${formatDate(r['Lead Closed On'])}</td>
+    </tr>
+  `).join('');
+}
+
+async function loadData() {
+  const icon = document.getElementById('refresh-icon');
+  icon.classList.add('spin');
+  document.getElementById('tbody').innerHTML = `<tr><td colspan="5" class="empty">Loading…</td></tr>`;
+  try {
+    const token = await getToken();
+    const headers = { Authorization: `Bearer ${token}` };
+
+    // Get list of worksheets first, then fetch first sheet's data
+    const sheetsRes = await fetch(`https://graph.microsoft.com/v1.0/users/${OWNER_UPN}/drive/root:/Documents/${FILE_NAME}:/workbook/worksheets`, { headers });
+    const sheetsData = await sheetsRes.json();
+    console.log('Sheets:', JSON.stringify(sheetsData));
+    if (!sheetsData.value || sheetsData.value.length === 0) throw new Error('No sheets found');
+    const firstSheetId = sheetsData.value[0].id;
+    const rangeRes = await fetch(`https://graph.microsoft.com/v1.0/users/${OWNER_UPN}/drive/root:/Documents/${FILE_NAME}:/workbook/worksheets/${firstSheetId}/usedRange`, { headers });
+    const rangeData = await rangeRes.json();
+    if (!rangeData.values) throw new Error('No data in sheet');
+
+    const vals = rangeData.values;
+    const hdrs = vals[0];
+    allData = vals.slice(1)
+      .filter(row => row.some(c => c !== ''))
+      .map(row => { const obj = {}; hdrs.forEach((h, i) => obj[h] = row[i]); return obj; })
+      .filter(r => r.Lead && r.Lead.toString().trim() !== '');
+
+    updateStats(allData);
+    populateAgents(allData);
+    render();
+    document.getElementById('last-updated').textContent = 'Last refreshed: ' + new Date().toLocaleTimeString();
+  } catch(e) {
+    console.error(e);
+    document.getElementById('tbody').innerHTML = `<tr><td colspan="5" class="empty">Could not load data. Try signing out and back in.</td></tr>`;
+  }
+  icon.classList.remove('spin');
+}
+
+init();
+</script>
+</body>
+</html>

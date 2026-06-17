@@ -126,7 +126,7 @@ const msalConfig = {
   cache: { cacheLocation: 'sessionStorage' }
 };
 const msalInstance = new msal.PublicClientApplication(msalConfig);
-const scopes = ['Files.Read', 'Files.Read.All', 'User.Read'];
+const scopes = ['Files.Read', 'Files.Read.All', 'Sites.Read.All', 'User.Read'];
 let allData = [];
 
 async function init() {

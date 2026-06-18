@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sample Data – Excel</title>
+
+  <!-- MSAL for Microsoft login -->
+  <script src="https://unpkg.com/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #f5f5f5;
+      color: #1a1a1a;
+      min-height: 100vh;
+      padding: 40px 24px;
+    }
+
+    header {
+      max-width: 900px;
+      margin: 0 auto 32px;
+    }
+
+    header h1 {
+      font-size: 22px;
+      font-weight: 600;
+      color: #1a1a1a;
+    }
+
+    header p {
+      font-size: 13px;
+      color: #888;
+      margin-top: 4px;
+    }
+
+    .card {
+      max-width: 900px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid #f0f0f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card-header span {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1a1a1a;
+    }
+
+    #status {
+      font-size: 12px;
+      color: #888;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead th {
+      background: #fafafa;
+      padding: 12px 20px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #999;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid #f7f7f7;
+      transition: background 0.15s;
+    }
+
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #fafafa; }
+
+    tbody td {
+      padding: 13px 20px;
+      font-size: 13.5px;
+      color: #2a2a2a;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11.5px;
+      font-weight: 500;
+    }
+
+    .badge-active    { background: #e6f4ea; color: #2d7a3e; }
+    .badge-closed    { background: #f0f0f0; color: #555; }
+    .badge-followup  { background: #fff4e0; color: #b06000; }
+
+    .empty {
+      padding: 48px 24px;
+      text-align: center;
+      color: #aaa;
+      font-size: 13px;
+    }
+
+    #login-btn {
+      display: block;
+      margin: 80px auto 0;
+      padding: 12px 28px;
+      background: #0067b8;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    #login-btn:hover { background: #005a9e; }
+
+    #login-wrap {
+      text-align: center;
+      padding-bottom: 40px;
+    }
+
+    #login-wrap p {
+      margin-top: 12px;
+      font-size: 13px;
+      color: #888;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Sample Data – Excel</h1>
+    <p>Live from SampleDataHTML.xlsx · Marketing Projects · SharePoint</p>
+  </header>
+
+  <div id="login-wrap" style="display:none;">
+    <button id="login-btn">Sign in with Microsoft</button>
+    <p>Sign in to load data from SharePoint</p>
+  </div>
+
+  <div class="card" id="table-card" style="display:none;">
+    <div class="card-header">
+      <span>Leads</span>
+      <span id="status">Loading…</span>
+    </div>
+    <div id="table-wrap">
+      <div class="empty">Loading data…</div>
+    </div>
+  </div>
+
+  <script>
+    // ── CONFIG ──────────────────────────────────────────────────────────────
+    const CLIENT_ID  = "791ec3d3-26f8-4fb1-ad6d-bd22f5a83a2f";
+    const TENANT_ID  = "90745028-ad90-4f79-8e2f-5d7d8e5d5233"; // from your Site ID domain
+    const DRIVE_ID   = "b!uWCI41E1dUmU2-k1P99mSMczZlXYkbVIp93DxifAZXp2Cgq_QqKgRY5p_jaj8oiX";
+    const FILE_ID    = "015F6M2NKQWQUIL3C3I5CICUFQDXZOPY5T";
+    const SHEET_NAME = "Sheet1";
+    // ────────────────────────────────────────────────────────────────────────
+
+    const msalConfig = {
+      auth: {
+        clientId: CLIENT_ID,
+        authority: `https://login.microsoftonline.com/${TENANT_ID}`,
+        redirectUri: window.location.href.split("?")[0].split("#")[0]
+      },
+      cache: { cacheLocation: "sessionStorage" }
+    };
+
+    const msalInstance = new msal.PublicClientApplication(msalConfig);
+    const scopes = ["Files.Read", "Sites.Read.All"];
+
+    async function getToken() {
+      const accounts = msalInstance.getAllAccounts();
+      if (accounts.length === 0) return null;
+      try {
+        const result = await msalInstance.acquireTokenSilent({ scopes, account: accounts[0] });
+        return result.accessToken;
+      } catch {
+        const result = await msalInstance.acquireTokenPopup({ scopes });
+        return result.accessToken;
+      }
+    }
+
+    async function loadData(token) {
+      const url = `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${SHEET_NAME}/usedRange(valuesOnly=true)`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error(`Graph API error: ${res.status}`);
+      const data = await res.json();
+      return data.text; // pre-formatted values including dates
+    }
+
+    function renderTable(rows) {
+      if (!rows || rows.length < 2) {
+        document.getElementById("table-wrap").innerHTML = '<div class="empty">No data found.</div>';
+        return;
+      }
+
+      const headers = rows[0];
+      const dataRows = rows.slice(1);
+
+      let html = "<table><thead><tr>";
+      headers.forEach(h => { html += `<th>${h}</th>`; });
+      html += "</tr></thead><tbody>";
+
+      dataRows.forEach(row => {
+        html += "<tr>";
+        row.forEach((cell, i) => {
+          if (i === 1) { // Status column
+            const val = cell.trim();
+            let cls = "badge-closed";
+            if (val === "Active") cls = "badge-active";
+            else if (val === "Follow Up") cls = "badge-followup";
+            html += `<td><span class="badge ${cls}">${val}</span></td>`;
+          } else {
+            html += `<td>${cell}</td>`;
+          }
+        });
+        html += "</tr>";
+      });
+
+      html += "</tbody></table>";
+      document.getElementById("table-wrap").innerHTML = html;
+      document.getElementById("status").textContent = `${dataRows.length} rows · just now`;
+    }
+
+    async function init() {
+
+      // Handle redirect response if coming back from login
+      try {
+        await msalInstance.handleRedirectPromise();
+      } catch (e) {
+        console.error(e);
+      }
+
+      const accounts = msalInstance.getAllAccounts();
+
+      if (accounts.length === 0) {
+        // Not signed in — show login button
+        document.getElementById("login-wrap").style.display = "block";
+        document.getElementById("login-btn").addEventListener("click", async () => {
+          try {
+            await msalInstance.loginPopup({ scopes });
+            document.getElementById("login-wrap").style.display = "none";
+            document.getElementById("table-card").style.display = "block";
+            await fetchAndRender();
+          } catch (e) {
+            alert("Sign-in failed: " + e.message);
+          }
+        });
+      } else {
+        // Already signed in
+        document.getElementById("table-card").style.display = "block";
+        await fetchAndRender();
+      }
+    }
+
+    async function fetchAndRender() {
+      try {
+        document.getElementById("status").textContent = "Loading…";
+        const token = await getToken();
+        const rows = await loadData(token);
+        renderTable(rows);
+      } catch (e) {
+        document.getElementById("status").textContent = "Error";
+        document.getElementById("table-wrap").innerHTML = `<div class="empty">Failed to load data: ${e.message}</div>`;
+        console.error(e);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
